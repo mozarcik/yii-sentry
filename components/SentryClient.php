@@ -33,6 +33,10 @@ class SentryClient extends CApplicationComponent
      * @var string dns to use when connecting to Sentry.
      */
     public $dns;
+    /**
+     * @var string
+     */
+    public $publicDsn;
 
     /**
      * @var string name of the active environment.
@@ -85,6 +89,12 @@ class SentryClient extends CApplicationComponent
         return $this->_loggedEventIds;
     }
 
+    public $userContextCallback = null;
+
+    public $exclude = array(
+        'CHttpException' => array(400, 403, 404),
+    );
+
     /** @var Raven_Client */
     private $_client;
 
@@ -113,6 +123,11 @@ class SentryClient extends CApplicationComponent
         if (!$this->isEnvironmentEnabled()) {
             return null;
         }
+
+        if ($this->exceptionExcluded($exception)) {
+            return null;
+        }
+
         $this->processOptions($options);
         try {
             $eventId = $this->_client->getIdent(
@@ -252,7 +267,11 @@ class SentryClient extends CApplicationComponent
         );
         try {
             $this->checkTags($options['tags']);
-            return new Raven_Client($this->dns, $options);
+            $client = new Raven_Client($this->dns, $options);
+            if ($this->userContextCallback !== null && is_callable($this->userContextCallback)) {
+                call_user_func($this->userContextCallback, $client);
+            }
+            return $client;
         } catch (Exception $e) {
             if (YII_DEBUG) {
                 throw new CException('SentryClient failed to create client: ' . $e->getMessage(), (int)$e->getCode());
@@ -284,5 +303,30 @@ class SentryClient extends CApplicationComponent
                 ));
             }
         }
+    }
+
+    /**
+     * @param Exception $exception
+     * @return bool
+     */
+    private function exceptionExcluded($exception)
+    {
+        foreach ($this->exclude as $key => $value) {
+            $exceptionClass = is_numeric($key) ? $value : $key;
+            $exceptionCodes = is_numeric($key) ? null : $value;
+
+            if ($exceptionClass !== get_class($exception)) {
+                continue;
+            }
+
+            $code = $exception instanceof CHttpException ? $exception->statusCode : $exception->getCode();
+            if ($exceptionCodes !== null && !in_array($code, $exceptionCodes)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 }
