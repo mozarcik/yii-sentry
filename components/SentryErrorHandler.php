@@ -23,6 +23,9 @@ class SentryErrorHandler extends CErrorHandler
     public function init()
     {
         parent::init();
+        if ($this->getSentryClient() === null) {
+            return;
+        }
         Yii::app()->attachEventHandler('onEndRequest', array($this, 'onShutdown'));
     }
 
@@ -32,7 +35,7 @@ class SentryErrorHandler extends CErrorHandler
     public function onShutdown()
     {
         $error = error_get_last();
-        if ($error !== null) {
+        if ($error !== null && $this->getSentryClient() !== null) {
             $errors = array(
                 E_ERROR,
                 E_PARSE,
@@ -56,7 +59,7 @@ class SentryErrorHandler extends CErrorHandler
      */
     protected function handleError($event)
     {
-        if (error_reporting() & $event->code) {
+        if (error_reporting() & $event->code && $this->getSentryClient() !== null) {
             $this->getSentryClient()->captureException(
                 $this->createErrorException($event->message, $event->code, $event->file, $event->line)
             );
@@ -70,7 +73,9 @@ class SentryErrorHandler extends CErrorHandler
      */
     protected function handleException($exception)
     {
-        $this->getSentryClient()->captureException($exception);
+        if ($this->getSentryClient() !== null) {
+            $this->getSentryClient()->captureException($exception);
+        }
         parent::handleException($exception);
     }
 
